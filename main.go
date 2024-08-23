@@ -20,14 +20,15 @@ type Stack struct {
 	items []Color
 }
 
-type Stackable interface {
-	Push() []Color
-	Pop() Color
-}
-
 func (s Stack) Push(v Color) Stack {
 	s.items = append(s.items, v);
 	return s;
+}
+
+func (s Stack) Pop() (Color, Stack) {
+	popped_value := s.items[len(s.items) - 1]
+	s.items = s.items[:len(s.items) - 1]
+	return popped_value, s;
 }
 
 func main() {
@@ -36,8 +37,15 @@ func main() {
 
 	fmt.Println("stack: ", stack)
 	color := Color{r: 123, g: 123, b:3254345, a: 1}
+	color2 := Color{r: 2, g: 2, b:123, a: 1}
+	color3 := Color{r: 3, g: 3, b:123213123, a: 1}
 	stack = stack.Push(color)
+	stack = stack.Push(color2)
+	stack = stack.Push(color3)
 	fmt.Println("stack 2: ", stack)
+	final_element, stack := stack.Pop()
+	fmt.Println("final value: ", final_element);
+	fmt.Println("resulting stack: ", stack)
 
 	// imageFile, err := os.Open("./test.jpeg");
 
