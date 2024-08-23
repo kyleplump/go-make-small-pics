@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
-	// "os"
-	// "image"
-	// _ "image/jpeg"
+	"os"
+	"image"
+	_ "image/jpeg"
+
 )
 
 
@@ -20,55 +21,71 @@ type Stack struct {
 	items []Color
 }
 
-func (s Stack) Push(v Color) Stack {
+func (s *Stack) Push(v Color) {
 	s.items = append(s.items, v);
-	return s;
 }
 
-func (s Stack) Pop() (Color, Stack) {
+func (s *Stack) Pop() (Color, bool) {
 	popped_value := s.items[len(s.items) - 1]
 	s.items = s.items[:len(s.items) - 1]
-	return popped_value, s;
+	return popped_value, true;
 }
 
 func main() {
 	fmt.Println("start");
 	var stack Stack
 
-	fmt.Println("stack: ", stack)
-	color := Color{r: 123, g: 123, b:3254345, a: 1}
-	color2 := Color{r: 2, g: 2, b:123, a: 1}
-	color3 := Color{r: 3, g: 3, b:123213123, a: 1}
-	stack = stack.Push(color)
-	stack = stack.Push(color2)
-	stack = stack.Push(color3)
-	fmt.Println("stack 2: ", stack)
-	final_element, stack := stack.Pop()
-	fmt.Println("final value: ", final_element);
-	fmt.Println("resulting stack: ", stack)
+	imageFile, err := os.Open("./test.jpeg");
+	f, _ := os.Create("./compressed.gmis");
+	defer imageFile.Close();
+	stats, _ := imageFile.Stat();
 
-	// imageFile, err := os.Open("./test.jpeg");
+	fmt.Println("original file size: ", stats.Size());
 
-	// if err != nil {
-	// 	// handle error
-	// 	fmt.Println("error opening image");
-	// }
+	if err != nil {
+		// handle error
+		fmt.Println("error opening image");
+	}
 
-	// imageData, _, err := image.Decode(imageFile)
+	imageData, _, err := image.Decode(imageFile)
 
-	// fmt.Println("image Data: ", imageData.Bounds())
-	// bounds := imageData.Bounds();
-	// var data []Color
+	bounds := imageData.Bounds();
 
-	// for i := bounds.Min.X; i < bounds.Max.X; i ++ {
-	// 	for j := bounds.Min.Y; j < bounds.Max.Y; j ++ {
-	// 		r, g, b, a := imageData.At(i, j).RGBA()
+	for i := bounds.Min.X; i < bounds.Max.X; i ++ {
+		for j := bounds.Min.Y; j < bounds.Max.Y; j ++ {
+			r, g, b, a := imageData.At(i, j).RGBA()
+			pixel := Color{r: r, g: g, b: b, a: a}
 
-	// 		fmt.Println("r: ", r)
-	// 		fmt.Println("g: ", g)
-	// 		fmt.Println("b: ", b)
-	// 		fmt.Println("a: ", a)
-	// 		// fmt.Println("point: ", imageData.At(i, j).RGBA())
-	// 	}
-	// }
+			// empty stack
+			if len(stack.items) == 0 {
+			 	stack.Push(pixel)
+			} else {
+				popped_value, _ := stack.Pop()
+				matched := false
+
+				if popped_value.r == r && popped_value.g == g && popped_value.b == b && popped_value.a == a {
+					matched = true
+				}
+
+				if matched {
+					popped_value.run = popped_value.run + 1
+					 stack.Push(popped_value);
+				} else {
+					 stack.Push(popped_value);
+					 stack.Push(pixel);
+				}
+			}
+		}
+	}
+
+	for _, color := range stack.items {
+		fmt.Fprintln(f, color)
+	}
+
+
+	done_stats, _ := f.Stat();
+
+	fmt.Println("resulting size: ", done_stats.Size());
+		f.Close();
+
 }
