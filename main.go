@@ -5,7 +5,9 @@ import (
 	"os"
 	"image"
 	_ "image/jpeg"
-
+	"unsafe"
+	"encoding/binary"
+	"compress/gzip"
 )
 
 
@@ -37,6 +39,7 @@ func main() {
 
 	imageFile, err := os.Open("./test.jpeg");
 	f, _ := os.Create("./compressed.gmis");
+	w := gzip.NewWriter(f);
 	defer imageFile.Close();
 	stats, _ := imageFile.Stat();
 
@@ -79,13 +82,20 @@ func main() {
 	}
 
 	for _, color := range stack.items {
-		fmt.Fprintln(f, color)
+		chunk := make([]byte, 20);
+		binary.LittleEndian.PutUint32(chunk, color.r)
+		binary.LittleEndian.PutUint32(chunk, color.g)
+		binary.LittleEndian.PutUint32(chunk, color.b)
+		binary.LittleEndian.PutUint32(chunk, color.a)
+		binary.LittleEndian.PutUint32(chunk, color.run)
+		w.Write(chunk)
 	}
 
 
-	done_stats, _ := f.Stat();
+	// done_stats, _ := w.Stat();
 
-	fmt.Println("resulting size: ", done_stats.Size());
-		f.Close();
+	// fmt.Println("resulting size: ", done_stats.Size());
+	fmt.Println("thing: ", unsafe.Sizeof(Color{r: 65535, g: 65535, b: 65535, a: 65535, run: 123}))
+	w.Close();
 
 }
