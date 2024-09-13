@@ -1,4 +1,4 @@
-# Go make images smaller
+# Go make small pics
 
 - a Go program that takes a source jpeg, encodes it using run-length encoding, then compresses the RLE information using zlib into a custom file format (.gmis)
 - then reads in the compressed file, and rebuilds the source jpeg as a png
