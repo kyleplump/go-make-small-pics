@@ -7,22 +7,18 @@ import (
 	_ "image/jpeg"
 	"io"
 	"os"
-
-	// "encoding/json"
-	// "bufio"
 	"compress/zlib"
-	// "unsafe"
 	"image/color"
 	"image/png"
 )
 
 
 type Color struct {
-	r uint32
-	g uint32
-	b uint32
-	a uint32
-	run uint32
+	r uint16
+	g uint16
+	b uint16
+	a uint16
+	run uint16
 }
 
 type Stack struct {
@@ -39,31 +35,25 @@ func (s *Stack) Pop() (Color, bool) {
 	return popped_value, true;
 }
 
-func main() {
+func compressImage(imgFile *os.File) *os.File {
 	var stack Stack
-
-	imageFile, err := os.Open("./test.jpeg");
-	f, _ := os.Create("./compressed.gmis");
-	w := zlib.NewWriter(f);
-	defer imageFile.Close();
-
-	stats, _ := imageFile.Stat();
-
-	fmt.Println("original file size: ", stats.Size());
+	compressedFile, err := os.Create("./compressed.gmis");
+	imageData, _, err := image.Decode(imgFile);
+	bounds := imageData.Bounds();
 
 	if err != nil {
-		// handle error
-		fmt.Println("error opening image");
+		// todo
+		fmt.Println("error decoding image file");
 	}
 
-	imageData, _, err := image.Decode(imageFile)
+	writer := zlib.NewWriter(compressedFile);
 
-	bounds := imageData.Bounds();
+	defer writer.Close();
 
 	for i := bounds.Min.X; i < bounds.Max.X; i ++ {
 		for j := bounds.Min.Y; j < bounds.Max.Y; j ++ {
 			r, g, b, a := imageData.At(i, j).RGBA()
-			pixel := Color{r: r, g: g, b: b, a: a}
+			pixel := Color{r: uint16(r), g: uint16(g), b: uint16(b), a: uint16(a)}
 
 			if len(stack.items) == 0 {
 			 	stack.Push(Color{r: pixel.r, g: pixel.g, b: pixel.b, a: pixel.a, run: 1 })
@@ -71,7 +61,7 @@ func main() {
 				popped_value, _ := stack.Pop()
 				matched := false
 
-				if popped_value.r == r && popped_value.g == g && popped_value.b == b && popped_value.a == a {
+				if popped_value.r == uint16(r) && popped_value.g == uint16(g) && popped_value.b == uint16(b) && popped_value.a == uint16(a) {
 					matched = true
 				}
 
@@ -86,10 +76,8 @@ func main() {
 		}
 	}
 
-	fmt.Println("size of stack: ", len(stack.items))
-
 	for _, color := range stack.items {
-		arr := []uint32{
+		arr := []uint16{
 			color.r,
 			color.g,
 			color.b,
@@ -97,138 +85,184 @@ func main() {
 			color.run,
 		}
 		s := []byte{};
-		// fmt.Println("writing color: ", color)
+
 		for _, value := range arr {
-			chunk := make([]byte, 4);
-			binary.LittleEndian.PutUint32(chunk, value);
+			chunk := make([]byte, 2);
+			binary.LittleEndian.PutUint16(chunk, value);
 			s = append(s, chunk...);
 		}
-		w.Write(s)
-		// stringifiedColor, _ := json.Marshal(color);
-		// f.WriteString(string(stringifiedColor));
+		writer.Write(s)
 	}
 
-	w.Close();
-	f.Close();
+	return compressedFile;
+}
 
-	compressedFile, _ := os.Open("./compressed.gmis");
-
-	compressedStats, _ := compressedFile.Stat();
-
-	// reader := bufio.NewReader(compressedFile);
-
-	fmt.Println("compressed file size:", compressedStats.Size());
-
-	fmt.Println("uncompressing file ...");
-
+func rebuildFile(compressedFile *os.File, bounds image.Rectangle) {
 	zlibReader, _ := zlib.NewReader(compressedFile);
 
-	buf := make([]byte, 20);
+
 	img := image.NewRGBA(image.Rect(0, 0, bounds.Max.X, bounds.Max.Y));
 	var newStack Stack
 
 	for {
-		_, err := zlibReader.Read(buf);
+		buf := make([]byte, 10);
+		n, err := zlibReader.Read(buf);
 
 		if err == io.EOF {
+			lastChunk := buf[:10];
+
+			r := binary.LittleEndian.Uint16(lastChunk[0:2])
+			g := binary.LittleEndian.Uint16(lastChunk[2:4])
+			b := binary.LittleEndian.Uint16(lastChunk[4:6])
+			a := binary.LittleEndian.Uint16(lastChunk[6:8])
+			run := binary.LittleEndian.Uint16(lastChunk[8:10])
+
+			c := Color{r: r, g: g, b: b, a: a, run: run}
+			newStack.Push(c);
 			break;
 		}
 
 		if err != nil {
-			fmt.Println("errored");
+			fmt.Println("error: ", err)
 			return;
 		}
-		r := binary.LittleEndian.Uint32(buf[0:4])
-		g := binary.LittleEndian.Uint32(buf[4:8])
-		b := binary.LittleEndian.Uint32(buf[8:12])
-		a := binary.LittleEndian.Uint32(buf[12:16])
-		run := binary.LittleEndian.Uint32(buf[16:20])
-		// fmt.Println("pixel: ", color.RGBA{uint8(r), uint8(g), uint8(b), uint8(a)})
-		// fmt.Println("run: ", run)
-		// fmt.Printf("Read %d bytes: %s\n", n, string(buf[:n]))
+
+		if n != 10 {
+			if n < 10 {
+				tmpBuf := make([]byte, 10 - n);
+				zlibReader.Read(tmpBuf);
+
+				if n == 2 {
+					r := binary.LittleEndian.Uint16(buf[0:2])
+					g := binary.LittleEndian.Uint16(tmpBuf[0:2])
+					b := binary.LittleEndian.Uint16(tmpBuf[2:4])
+					a := binary.LittleEndian.Uint16(tmpBuf[4:8])
+					run := binary.LittleEndian.Uint16(tmpBuf[6:8])
+
+					c := Color{r: r, g: g, b: b, a: a, run: run}
+					newStack.Push(c);
+					continue;
+
+				} else if n == 4 {
+					r := binary.LittleEndian.Uint16(buf[0:2])
+					g := binary.LittleEndian.Uint16(buf[2:4])
+					b := binary.LittleEndian.Uint16(tmpBuf[0:2])
+					a := binary.LittleEndian.Uint16(tmpBuf[2:4])
+					run := binary.LittleEndian.Uint16(tmpBuf[4:6])
+
+					c := Color{r: r, g: g, b: b, a: a, run: run}
+					newStack.Push(c);
+					continue;
+
+				} else if n == 6 {
+					r := binary.LittleEndian.Uint16(buf[0:2])
+					g := binary.LittleEndian.Uint16(buf[2:4])
+					b := binary.LittleEndian.Uint16(buf[4:6])
+					a := binary.LittleEndian.Uint16(tmpBuf[0:2])
+					run := binary.LittleEndian.Uint16(tmpBuf[2:4])
+
+					c := Color{r: r, g: g, b: b, a: a, run: run}
+					newStack.Push(c);
+					continue;
+
+				} else if n == 8 {
+					r := binary.LittleEndian.Uint16(buf[0:2])
+					g := binary.LittleEndian.Uint16(buf[2:4])
+					b := binary.LittleEndian.Uint16(buf[4:6])
+					a := binary.LittleEndian.Uint16(buf[6:8])
+					run := binary.LittleEndian.Uint16(tmpBuf[0:2])
+
+					c := Color{r: r, g: g, b: b, a: a, run: run}
+					newStack.Push(c);
+					continue;
+				}
+			} else {
+				chunk := buf[:10];
+				buf = buf[10:];
+
+				r := binary.LittleEndian.Uint16(chunk[0:2])
+				g := binary.LittleEndian.Uint16(chunk[2:4])
+				b := binary.LittleEndian.Uint16(chunk[4:6])
+				a := binary.LittleEndian.Uint16(chunk[6:8])
+				run := binary.LittleEndian.Uint16(chunk[8:10])
+
+				c := Color{r: r, g: g, b: b, a: a, run: run}
+				newStack.Push(c);
+				continue;
+			}
+		}
+
+		lastChunk := buf[:10];
+
+		r := binary.LittleEndian.Uint16(lastChunk[0:2])
+		g := binary.LittleEndian.Uint16(lastChunk[2:4])
+		b := binary.LittleEndian.Uint16(lastChunk[4:6])
+		a := binary.LittleEndian.Uint16(lastChunk[6:8])
+		run := binary.LittleEndian.Uint16(lastChunk[8:10])
+
 		c := Color{r: r, g: g, b: b, a: a, run: run}
 		newStack.Push(c);
 	}
 
-	fmt.Println("decoded stack size: ", len(newStack.items))
-	curRun, _ := stack.Pop();
+	curRun, _ := newStack.Pop();
 
 	for i := bounds.Max.X; i > bounds.Min.X; i -- {
 		for j := bounds.Max.Y; j > bounds.Min.Y; j -- {
 			if curRun.run == 0 {
-				curRun, _ = stack.Pop();
+				curRun, _ = newStack.Pop();
 			}
-			fmt.Println("color: ", curRun)
-			img.Set(i, j, color.RGBA64{uint16(curRun.r), uint16(curRun.g), uint16(curRun.b), uint16(curRun.a)});
+			img.Set(i, j, color.RGBA64{curRun.r, curRun.g, curRun.b, curRun.a});
 			curRun.run --;
 		}
 	}
 
 	outfile, _ := os.Create("output.png");
-
 	png.Encode(outfile, img);
 
 	outfile.Close();
+}
 
+func getImageBounds(img *os.File) image.Rectangle {
+	img.Seek(0, 0);
+	imageData, _, err := image.Decode(img);
 
-	// curr_color := make([]byte, compressedStats.Size() * 2);
-	// zlibReader.Read(curr_color);
-	// var result []Color
+	if err != nil {
+		fmt.Println("error: ", err, imageData);
+	}
 
-	// // Read 4 bytes at a time
-	// for i := 0; i < len(curr_color); i += 20 {
-	// 	chunk := curr_color[i : i+20]
-	// 	color := Color{binary.LittleEndian.Uint32(chunk[0:4]), binary.LittleEndian.Uint32(chunk[4:8]), binary.LittleEndian.Uint32(chunk[8:12]), binary.LittleEndian.Uint32(chunk[12:16]), binary.LittleEndian.Uint32(chunk[16:20])}
-	// 	result = append(result, color)
-	// }
+	bounds := imageData.Bounds();
 
-	// fmt.Println("result: ", result)
+	return bounds;
+}
 
+func main() {
 
+	imageFile, err := os.Open("./test_input.jpeg");
 
+	if err != nil {
+		// todo
+		fmt.Println("error opening image file");
+	}
 
+	defer imageFile.Close();
 
-	// fmt.Println("bytes read: ", n)
-	// fmt.Println("curr color size: ", len(curr_color))
-	// page := int64(1)
-	// curr_page := curr_color[0:20]
-	// pixels_written := binary.LittleEndian.Uint32(curr_page[16:20]);
-	// // fmt.Println("curr run: ", pixels_written)
-	// img := image.NewRGBA(image.Rect(0, 0, bounds.Max.X, bounds.Max.Y));
-	// fmt.Println("bounds: ", bounds)
-	// for i := bounds.Min.X; i < bounds.Max.X; i ++ {
-	// 	for j := bounds.Min.Y; j < bounds.Max.Y; j ++ {
-	// 		fmt.Println("writing: ", i, j)
-	// 		if(pixels_written > 0) {
-	// 			r := binary.LittleEndian.Uint32(curr_page[0:4])
-	// 			g := binary.LittleEndian.Uint32(curr_page[4:8])
-	// 			b := binary.LittleEndian.Uint32(curr_page[8:12])
-	// 			a := binary.LittleEndian.Uint32(curr_page[12:16])
-	// 			fmt.Println("pixel: ", color.RGBA{uint8(r), uint8(g), uint8(b), uint8(a)})
+	// print input file size
+	stats, _ := imageFile.Stat();
+	fmt.Println("original file size: ", stats.Size());
 
-	// 			img.Set(i, j, color.RGBA{uint8(r), uint8(g), uint8(b), uint8(a)});
-	// 			pixels_written = pixels_written - 1;
-	// 			// fmt.Println("pixels written: ", pixels_written)
-	// 		} else {
-	// 			fmt.Println("next page")
-	// 			start := page * 20
-	// 			end := start + 20
+	compressedFile := compressImage(imageFile);
+	compressedFile.Seek(0, 0);
 
-	// 			if end < (compressedStats.Size() - 20) {
+	compressedStats, err := compressedFile.Stat();
 
-	// 				curr_page = curr_color[start:end]
-	// 				fmt.Println("start: ", start, ", end: ", end, ", size: ", compressedStats.Size())
-	// 				pixels_written = binary.LittleEndian.Uint32(curr_page[(end - 4):end]);
-	// 				page = page + 1
-	// 			}
+	if err != nil {
+		// todo
+	}
 
-	// 		}
-	// 	}
-	// }
+	// report compressed size
+	fmt.Println("compressed file size:", compressedStats.Size());
+	fmt.Println("uncompressing file ...");
 
-	// outfile, _ := os.Create("output.png");
-
-	// png.Encode(outfile, img);
-
-	// outfile.Close();
+	bounds := getImageBounds(imageFile);
+	rebuildFile(compressedFile, bounds);
 }
