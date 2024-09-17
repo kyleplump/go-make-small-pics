@@ -109,15 +109,7 @@ func rebuildFile(compressedFile *os.File, bounds image.Rectangle) {
 		n, err := zlibReader.Read(buf);
 
 		if err == io.EOF {
-			lastChunk := buf[:10];
-
-			r := binary.LittleEndian.Uint16(lastChunk[0:2])
-			g := binary.LittleEndian.Uint16(lastChunk[2:4])
-			b := binary.LittleEndian.Uint16(lastChunk[4:6])
-			a := binary.LittleEndian.Uint16(lastChunk[6:8])
-			run := binary.LittleEndian.Uint16(lastChunk[8:10])
-
-			c := Color{r: r, g: g, b: b, a: a, run: run}
+			c := decodeColor(buf[:10])
 			newStack.Push(c);
 			break;
 		}
@@ -131,76 +123,24 @@ func rebuildFile(compressedFile *os.File, bounds image.Rectangle) {
 			if n < 10 {
 				tmpBuf := make([]byte, 10 - n);
 				zlibReader.Read(tmpBuf);
+				chunk := []byte{};
 
-				if n == 2 {
-					r := binary.LittleEndian.Uint16(buf[0:2])
-					g := binary.LittleEndian.Uint16(tmpBuf[0:2])
-					b := binary.LittleEndian.Uint16(tmpBuf[2:4])
-					a := binary.LittleEndian.Uint16(tmpBuf[4:8])
-					run := binary.LittleEndian.Uint16(tmpBuf[6:8])
-
-					c := Color{r: r, g: g, b: b, a: a, run: run}
-					newStack.Push(c);
-					continue;
-
-				} else if n == 4 {
-					r := binary.LittleEndian.Uint16(buf[0:2])
-					g := binary.LittleEndian.Uint16(buf[2:4])
-					b := binary.LittleEndian.Uint16(tmpBuf[0:2])
-					a := binary.LittleEndian.Uint16(tmpBuf[2:4])
-					run := binary.LittleEndian.Uint16(tmpBuf[4:6])
-
-					c := Color{r: r, g: g, b: b, a: a, run: run}
-					newStack.Push(c);
-					continue;
-
-				} else if n == 6 {
-					r := binary.LittleEndian.Uint16(buf[0:2])
-					g := binary.LittleEndian.Uint16(buf[2:4])
-					b := binary.LittleEndian.Uint16(buf[4:6])
-					a := binary.LittleEndian.Uint16(tmpBuf[0:2])
-					run := binary.LittleEndian.Uint16(tmpBuf[2:4])
-
-					c := Color{r: r, g: g, b: b, a: a, run: run}
-					newStack.Push(c);
-					continue;
-
-				} else if n == 8 {
-					r := binary.LittleEndian.Uint16(buf[0:2])
-					g := binary.LittleEndian.Uint16(buf[2:4])
-					b := binary.LittleEndian.Uint16(buf[4:6])
-					a := binary.LittleEndian.Uint16(buf[6:8])
-					run := binary.LittleEndian.Uint16(tmpBuf[0:2])
-
-					c := Color{r: r, g: g, b: b, a: a, run: run}
-					newStack.Push(c);
-					continue;
-				}
+				chunk = append(chunk, buf[0:n]...);
+				chunk = append(chunk, tmpBuf[0:10-n]...);
+				c := decodeColor(chunk);
+				newStack.Push(c);
+				continue;
 			} else {
 				chunk := buf[:10];
 				buf = buf[10:];
+				c := decodeColor(chunk);
 
-				r := binary.LittleEndian.Uint16(chunk[0:2])
-				g := binary.LittleEndian.Uint16(chunk[2:4])
-				b := binary.LittleEndian.Uint16(chunk[4:6])
-				a := binary.LittleEndian.Uint16(chunk[6:8])
-				run := binary.LittleEndian.Uint16(chunk[8:10])
-
-				c := Color{r: r, g: g, b: b, a: a, run: run}
 				newStack.Push(c);
 				continue;
 			}
 		}
 
-		lastChunk := buf[:10];
-
-		r := binary.LittleEndian.Uint16(lastChunk[0:2])
-		g := binary.LittleEndian.Uint16(lastChunk[2:4])
-		b := binary.LittleEndian.Uint16(lastChunk[4:6])
-		a := binary.LittleEndian.Uint16(lastChunk[6:8])
-		run := binary.LittleEndian.Uint16(lastChunk[8:10])
-
-		c := Color{r: r, g: g, b: b, a: a, run: run}
+		c := decodeColor(buf[:10]);
 		newStack.Push(c);
 	}
 
@@ -233,6 +173,18 @@ func getImageBounds(img *os.File) image.Rectangle {
 	bounds := imageData.Bounds();
 
 	return bounds;
+}
+
+func decodeColor(chunk []byte) Color {
+	r := binary.LittleEndian.Uint16(chunk[0:2])
+	g := binary.LittleEndian.Uint16(chunk[2:4])
+	b := binary.LittleEndian.Uint16(chunk[4:6])
+	a := binary.LittleEndian.Uint16(chunk[6:8])
+	run := binary.LittleEndian.Uint16(chunk[8:10])
+
+	color := Color{r: r, g: g, b: b, a: a, run: run}
+
+	return color;
 }
 
 func main() {
