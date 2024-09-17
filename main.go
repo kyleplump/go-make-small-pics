@@ -12,29 +12,6 @@ import (
 	"image/png"
 )
 
-
-type Color struct {
-	r uint16
-	g uint16
-	b uint16
-	a uint16
-	run uint16
-}
-
-type Stack struct {
-	items []Color
-}
-
-func (s *Stack) Push(v Color) {
-	s.items = append(s.items, v);
-}
-
-func (s *Stack) Pop() (Color, bool) {
-	popped_value := s.items[len(s.items) - 1]
-	s.items = s.items[:len(s.items) - 1]
-	return popped_value, true;
-}
-
 func compressImage(imgFile *os.File) *os.File {
 	var stack Stack
 	compressedFile, err := os.Create("./compressed.gmis");
@@ -100,7 +77,6 @@ func compressImage(imgFile *os.File) *os.File {
 func rebuildFile(compressedFile *os.File, bounds image.Rectangle) {
 	zlibReader, _ := zlib.NewReader(compressedFile);
 
-
 	img := image.NewRGBA(image.Rect(0, 0, bounds.Max.X, bounds.Max.Y));
 	var newStack Stack
 
@@ -109,7 +85,7 @@ func rebuildFile(compressedFile *os.File, bounds image.Rectangle) {
 		n, err := zlibReader.Read(buf);
 
 		if err == io.EOF {
-			c := decodeColor(buf[:10])
+			c := DecodeColor(buf[:10])
 			newStack.Push(c);
 			break;
 		}
@@ -127,20 +103,20 @@ func rebuildFile(compressedFile *os.File, bounds image.Rectangle) {
 
 				chunk = append(chunk, buf[0:n]...);
 				chunk = append(chunk, tmpBuf[0:10-n]...);
-				c := decodeColor(chunk);
+				c := DecodeColor(chunk);
 				newStack.Push(c);
 				continue;
 			} else {
 				chunk := buf[:10];
 				buf = buf[10:];
-				c := decodeColor(chunk);
+				c := DecodeColor(chunk);
 
 				newStack.Push(c);
 				continue;
 			}
 		}
 
-		c := decodeColor(buf[:10]);
+		c := DecodeColor(buf[:10]);
 		newStack.Push(c);
 	}
 
@@ -160,31 +136,6 @@ func rebuildFile(compressedFile *os.File, bounds image.Rectangle) {
 	png.Encode(outfile, img);
 
 	outfile.Close();
-}
-
-func getImageBounds(img *os.File) image.Rectangle {
-	img.Seek(0, 0);
-	imageData, _, err := image.Decode(img);
-
-	if err != nil {
-		fmt.Println("error: ", err, imageData);
-	}
-
-	bounds := imageData.Bounds();
-
-	return bounds;
-}
-
-func decodeColor(chunk []byte) Color {
-	r := binary.LittleEndian.Uint16(chunk[0:2])
-	g := binary.LittleEndian.Uint16(chunk[2:4])
-	b := binary.LittleEndian.Uint16(chunk[4:6])
-	a := binary.LittleEndian.Uint16(chunk[6:8])
-	run := binary.LittleEndian.Uint16(chunk[8:10])
-
-	color := Color{r: r, g: g, b: b, a: a, run: run}
-
-	return color;
 }
 
 func main() {
@@ -215,6 +166,6 @@ func main() {
 	fmt.Println("compressed file size:", compressedStats.Size());
 	fmt.Println("uncompressing file ...");
 
-	bounds := getImageBounds(imageFile);
+	bounds := ImageBounds(imageFile);
 	rebuildFile(compressedFile, bounds);
 }
